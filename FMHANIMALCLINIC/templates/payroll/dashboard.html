@@ -1,0 +1,100 @@
+{% extends 'payroll/base.html' %}
+
+{% block title %}Payroll Dashboard{% endblock %}
+
+{% block payroll_content %}
+<style>
+  .payroll-dashboard { display: grid; gap: 20px; }
+  .workflow-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .dashboard-panel, .workflow-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  .workflow-card { padding: 20px; }
+  .workflow-card__top, .panel-title, .period-row, .status-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .workflow-card__label, .muted, .period-meta { color: var(--text-2); font-size: .86rem; }
+  .workflow-card__icon, .panel-title i { color: var(--primary); font-size: 1.35rem; }
+  .workflow-card__value { color: var(--text-1); font-size: 1.85rem; font-weight: 800; margin-top: 14px; }
+  .workflow-card__value.warning { color: #c77b00; }
+  .dashboard-panel { padding: 22px; }
+  .panel-title { border-bottom: 1px solid var(--border); justify-content: flex-start; margin: 0 0 4px; padding-bottom: 15px; }
+  .panel-title h2 { color: var(--text-1); font-size: 1.05rem; margin: 0; }
+  .state-panel { background: color-mix(in srgb, var(--primary) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border)); border-radius: var(--radius-sm); margin: 18px 0; padding: 18px; }
+  .state-panel strong { color: var(--text-1); display: block; font-size: 1.12rem; margin-bottom: 9px; }
+  .status-pill { border-radius: 999px; display: inline-flex; font-size: .78rem; font-weight: 700; padding: 5px 10px; }
+  .status-pill.ready { background: #e5f7ed; color: #147a46; }
+  .status-pill.pending { background: #fff4d6; color: #9a6500; }
+  .status-pill.locked { background: #e6f0ff; color: #2563a8; }
+  .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .dashboard-action { align-items: center; background: var(--primary); border-radius: var(--radius-sm); color: #fff; display: inline-flex; font-size: .9rem; font-weight: 700; gap: 8px; padding: 11px 14px; text-decoration: none; }
+  .dashboard-action.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-1); }
+  .dashboard-action:hover { color: #fff; filter: brightness(.95); }
+  .dashboard-action.secondary:hover { color: var(--primary); }
+  .period-list { display: grid; }
+  .period-row { border-bottom: 1px solid var(--border); padding: 14px 0; }
+  .period-row:last-child { border-bottom: 0; }
+  .period-name { color: var(--text-1); font-weight: 700; }
+  .period-meta { margin-top: 3px; }
+  .empty-state { color: var(--text-2); padding: 26px 0 10px; text-align: center; }
+  .empty-state i { display: block; font-size: 2rem; margin-bottom: 8px; }
+  @media (max-width: 1100px) { .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 600px) { .workflow-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) { .dashboard-panel { padding: 17px; } .period-row { align-items: flex-start; flex-direction: column; } }
+</style>
+
+<div class="payroll-dashboard">
+  <section class="workflow-grid" aria-label="Payroll workflow status">
+    <div class="workflow-card">
+      <div class="workflow-card__top">
+        <span class="workflow-card__label">Current period</span>
+        <i class="bx bx-calendar-event workflow-card__icon"></i>
+      </div>
+      <div class="workflow-card__value">{% if current_period %}{{ current_period.get_period_type_display }}{% else %}No period{% endif %}</div>
+      <span class="muted">{% if current_period %}{{ current_period.month }}/{{ current_period.year|stringformat:"d" }} · {{ current_period.get_status_display }}{% else %}No active payroll created yet{% endif %}</span>
+    </div>
+    <div class="workflow-card">
+      <div class="workflow-card__top">
+        <span class="workflow-card__label">Active employees</span>
+        <i class="bx bx-user-check workflow-card__icon"></i>
+      </div>
+      <div class="workflow-card__value">{{ active_employees|default:"0" }}</div>
+      <span class="muted">Eligible for payroll processing</span>
+    </div>
+    <div class="workflow-card">
+      <div class="workflow-card__top">
+        <span class="workflow-card__label">Released periods</span>
+        <i class="bx bx-check-double workflow-card__icon"></i>
+      </div>
+      <div class="workflow-card__value">{{ released_periods_count|default:"0" }}</div>
+      <span class="muted">Completed payroll cycles this year</span>
+    </div>
+    <div class="workflow-card">
+      <div class="workflow-card__top">
+        <span class="workflow-card__label">YTD net payroll</span>
+        <i class="bx bx-wallet workflow-card__icon"></i>
+      </div>
+      <div class="workflow-card__value">₱ {{ total_payroll_this_year|floatformat:2 }}</div>
+      <span class="muted">Released payroll for this year</span>
+    </div>
+  </section>
+
+  <section class="dashboard-panel">
+    <div class="panel-title"><i class="bx bx-transfer-alt"></i><h2>Payroll workflow</h2></div>
+    <div class="state-panel">
+      {% if current_upload %}
+        <strong>Attendance imported for {{ current_upload.period_start|date:"F Y" }}</strong>
+        <div class="status-line"><span class="muted">{{ current_upload.source_filename }}</span><span class="status-pill {% if locked_current_month %}locked{% else %}ready{% endif %}">{% if locked_current_month %}Payroll locked{% else %}Ready for payroll{% endif %}</span></div>
+      {% else %}
+        <strong>No attendance file imported for {{ current_month }}/{{ current_year|stringformat:"d" }}</strong>
+        <div class="status-line"><span class="muted">Import attendance before reviewing payslips.</span><span class="status-pill pending">Awaiting import</span></div>
+      {% endif %}
+    </div>
+    <p class="muted">{% if locked_current_month %}This month cannot be changed because payroll has been generated or released.{% else %}Attendance imports can replace the current month until payroll is generated or released.{% endif %}</p>
+    <div class="action-row"><a class="dashboard-action" href="{% url 'payroll:requests' %}"><i class="bx bx-send"></i> Manage payslips</a><a class="dashboard-action secondary" href="{% url 'attendance:import' %}"><i class="bx bx-upload"></i> Import attendance</a><a class="dashboard-action secondary" href="{% url 'attendance:review' %}"><i class="bx bx-list-check"></i> Review attendance</a></div>
+  </section>
+
+  <section class="dashboard-panel">
+    <div class="panel-title"><i class="bx bx-history"></i><h2>Recent payroll periods</h2></div>
+    {% if recent_periods %}
+      <div class="period-list">{% for period in recent_periods %}<div class="period-row"><div><div class="period-name">{{ period.period_display }}</div><div class="period-meta">{{ period.employee_count|default:"0" }} staff records{% if period.generated_at %} · {{ period.generated_at|date:"M d, Y" }}{% endif %}</div></div><span class="status-pill {% if period.status == 'RELEASED' %}ready{% elif period.status == 'GENERATED' %}locked{% else %}pending{% endif %}">{{ period.get_status_display }}</span></div>{% endfor %}</div>
+    {% else %}<div class="empty-state"><i class="bx bx-folder-open"></i>No payroll periods have been created yet.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

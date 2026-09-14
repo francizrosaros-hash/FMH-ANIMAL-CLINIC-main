@@ -1,0 +1,372 @@
+{% extends 'payroll/base.html' %}
+{% load currency_filters %}
+{% load l10n %}
+
+{% block title %}Payslips - {{ period.period_display }}{% endblock %}
+
+{% block payroll_content %}
+<style>
+  /* Modal Button Styles */
+  .btn-cancel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-1);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+  }
+
+  .btn-cancel:hover {
+    border-color: var(--border-hover);
+    background: var(--bg);
+  }
+
+  .btn-submit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm, 6px);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s cubic-bezier(0.4, 0.2, 0.2, 1);
+    text-decoration: none;
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(230, 57, 70, 0.25);
+  }
+
+  .btn-submit:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(230, 57, 70, 0.35);
+  }
+
+  /* Modal Styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    padding: 16px;
+  }
+
+  .modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .modal-content {
+    width: 100%;
+    max-width: 480px;
+    background: var(--surface);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+    transform: translateY(10px) scale(0.98);
+    transition: transform 0.2s ease;
+    overflow: hidden;
+  }
+
+  .modal-overlay.active .modal-content {
+    transform: translateY(0) scale(1);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-2);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .modal-body {
+    padding: 0 20px 18px;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 20px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .payslips-header { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 24px; margin-bottom: 24px; display: grid; grid-template-columns: minmax(280px, 1fr) minmax(520px, 1.35fr); align-items: start; gap: 28px; }
+  .payslips-header h2 { margin: 0; color: var(--text-1); font-size: 1.3rem; font-weight: 700; }
+  .payslips-table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-card); }
+  .payslips-table table { width: 100%; border-collapse: collapse; }
+  .payslips-table thead { background: var(--bg); border-bottom: 1px solid var(--border); }
+  .payslips-table th { padding: 16px; text-align: left; font-weight: 600; font-size: 0.85rem; color: var(--text-2); }
+  .payslips-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 0.95rem; color: var(--text-1); vertical-align: middle; }
+  .payslips-table tbody tr { transition: background-color 0.2s ease; }
+  .payslips-table tbody tr:hover { background: var(--bg); }
+  .actions { display: flex; gap: 8px; }
+  .action-btn { padding: 8px; background: var(--bg); color: var(--text-1); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 1.1rem; cursor: pointer; text-decoration: none; transition: all 0.2s; display: inline-flex; }
+  .action-btn:hover { background: var(--primary); color: white; border-color: var(--primary); }
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+  .status-draft { background: rgba(158, 158, 158, 0.1); border: 1px solid rgba(158, 158, 158, 0.2); color: #757575; }
+  .status-approved { background: rgba(255, 152, 0, 0.1); border: 1px solid rgba(255, 152, 0, 0.2); color: #f59e0b; }
+  .status-released { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); color: #10b981; }
+  .btn { padding: 10px 20px; background: var(--primary); color: white; border: none; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-size: 0.95rem; transition: background 0.2s; }
+  .btn:hover { opacity: 0.9; box-shadow: 0 4px 12px rgba(0,150,136,0.2); }
+  .action-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; background: transparent; color: var(--text-2); font-size: 1.15rem; line-height: 1; cursor: pointer; transition: all 0.2s ease; text-decoration: none; }
+  .action-btn:hover { background: var(--surface); color: var(--primary); box-shadow: 0 2px 4px rgba(0,0,0,0.06); }
+  .action-btn-warning:hover { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+  .action-btn-danger { color: var(--text-2); }
+  .action-btn-danger:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+  .period-reload-form { display: grid; grid-template-columns: repeat(4, minmax(105px, 1fr)) auto; gap: 10px; align-items: end; width: 100%; }
+  .period-control { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .period-control label { color: var(--text-3); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .period-reload-form select { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text-1); font: inherit; font-size: 0.85rem; }
+  .period-reload-form select:focus { outline: 2px solid rgba(0, 150, 136, 0.2); outline-offset: 1px; border-color: var(--primary); }
+  .period-reload-form .btn { height: 40px; padding: 0 14px; white-space: nowrap; }
+  .payslips-header > div:last-child { display: flex !important; flex-direction: column; align-items: stretch !important; gap: 16px !important; }
+  .payslips-header > div:last-child > .btn { align-self: flex-end; }
+  .payslips-header > div:last-child > .status-badge { align-self: flex-start; width: fit-content; white-space: nowrap; }
+  @media (max-width: 1100px) { .payslips-header { grid-template-columns: 1fr; gap: 18px; } }
+  @media (max-width: 720px) { .period-reload-form { grid-template-columns: repeat(2, minmax(130px, 1fr)); } .period-reload-form .btn { width: 100%; } }
+  @media (max-width: 420px) { .period-reload-form { grid-template-columns: 1fr; } }
+</style>
+
+<div class="payslips-header">
+  <div>
+    <h2><i class='bx bx-file' style="color: var(--primary);"></i> Payroll Period - {{ period.period_display }}</h2>
+    <p style="margin: 5px 0 0; color: var(--text-3); font-size: 0.9rem;">
+      <strong>Period Type:</strong> {{ period.get_period_type_display }}
+      {% if period.start_date %} · {{ period.start_date|date:"M d" }} - {{ period.end_date|date:"M d, Y" }}{% endif %}
+      · {{ period.scope_display }}
+    </p>
+    <p style="margin: 5px 0 0; color: var(--text-3); font-size: 0.85rem;">
+      <i class='bx bx-info-circle'></i> Status: 
+      {% if period.status == 'DRAFT' %}
+        <strong style="color: #ef4444;">Draft - Edit payslips below, then generate</strong>
+      {% elif period.status == 'EDITED' %}
+        <strong style="color: #f59e0b;">Edited - All changes complete, ready to generate</strong>
+      {% elif period.status == 'GENERATED' %}
+        <strong style="color: #3b82f6;">Generated - Calculations locked, ready to release</strong>
+      {% elif period.status == 'RELEASED' %}
+        <strong style="color: #10b981;">Released - Payslips sent to employees</strong>
+      {% endif %}
+    </p>
+  </div>
+  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+    {% if period.status == 'DRAFT' or period.status == 'EDITED' %}
+    <form method="get" action="{% url 'payroll:generate' %}" class="period-reload-form">
+      <input type="hidden" name="load" value="1">
+      <div class="period-control">
+        <label for="reload-month">Month</label>
+        <select id="reload-month" name="month" aria-label="Payroll month">
+        {% for month_info in months %}
+          <option value="{{ month_info.num }}" {% if month_info.num == period.month %}selected{% endif %}>{{ month_info.name }}</option>
+        {% endfor %}
+        </select>
+      </div>
+      <div class="period-control">
+        <label for="reload-year">Year</label>
+        <select id="reload-year" name="year" aria-label="Payroll year">
+        {% for year_value in years %}
+          <option value="{{ year_value }}" {% if year_value == period.year %}selected{% endif %}>{{ year_value|unlocalize }}</option>
+        {% endfor %}
+        </select>
+      </div>
+      <div class="period-control">
+        <label for="reload-period-type">Period Type</label>
+        <select id="reload-period-type" name="period_type" aria-label="Payroll period type">
+        {% for value, label in period_types %}
+          <option value="{{ value }}" {% if value == selected_period_type %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        </select>
+      </div>
+      <div class="period-control">
+        <label for="reload-branch">Branch</label>
+        <select id="reload-branch" name="branch" aria-label="Payroll branch">
+        <option value="ALL" {% if all_branches %}selected{% endif %}>All Branches</option>
+        {% for branch in branches %}
+          <option value="{{ branch.id }}" {% if selected_branch.id == branch.id %}selected{% endif %}>{{ branch.name }}</option>
+        {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn" title="Load a different payroll period"><i class='bx bx-refresh'></i> Reload</button>
+    </form>
+    {% endif %}
+    {% if period.status == 'DRAFT' or period.status == 'EDITED' %}
+      <!-- Generate Payroll Button (visible in DRAFT/EDITED state) -->
+      <form method="post" action="{% url 'payroll:period_generate' period.id %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn" style="background: #3b82f6; border-color: #3b82f6;" title="Lock calculations and validate payroll">
+          <i class='bx bx-lock'></i> Generate Payroll
+        </button>
+      </form>
+    {% endif %}
+    
+    {% if period.status == 'RELEASED' %}
+      <!-- Released Status Badge -->
+      <span class="status-badge status-released"><i class='bx bx-check-double'></i> Released</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if payslips %}
+<div class="payslips-table">
+  <table>
+    <thead>
+      <tr>
+        <th>Employee</th>
+        <th>Gross Pay</th>
+        <th>Deductions</th>
+        <th>Net Pay</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for payslip in payslips %}
+      <tr>
+        <td style="text-align: center;">
+          <div>
+            <strong style="color: var(--text-1); font-weight: 600;">{{ payslip.employee.full_name }}</strong>
+            <small style="display: block; color: var(--text-3); font-size: 0.8rem; margin-top: 2px;">{{ payslip.employee.branch.name|default:"No Branch" }}</small>
+          </div>
+        </td>
+        <td style="font-weight: 500;">₱{{ payslip.gross_pay|peso }}</td>
+        <td style="font-weight: 500; color: #DC3545;">₱{{ payslip.total_deductions|peso }}</td>
+        <td style="font-weight: 700; color: #10b981;">₱{{ payslip.net_pay|peso }}</td>
+        <td>
+          {% if payslip.status == 'RELEASED' %}
+            <span class="status-badge status-released"><i class='bx bx-check'></i> Sent</span>
+          {% elif payslip.status == 'APPROVED' %}
+            <span class="status-badge status-approved"><i class='bx bx-loader-circle bx-spin'></i> Ready</span>
+          {% else %}
+            <span class="status-badge status-draft"><i class='bx bx-edit'></i> Draft</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            {% if period.status == 'DRAFT' or period.status == 'EDITED' %}
+            <a href="{% url 'payroll:payslip_edit' payslip.id %}?branch={{ selected_branch.id }}" class="action-btn" title="Edit Payslip"><i class='bx bx-pencil'></i></a>
+            {% endif %}
+            {% if period.status != 'DRAFT' and period.status != 'EDITED' %}
+            {% if payslip.employee.email %}
+            <form method="post" action="{% url 'payroll:send_email' payslip.id %}" style="display: inline;" onsubmit="return confirm('Resend payslip email to {{ payslip.employee.full_name }}?');">
+              {% csrf_token %}
+              <button type="submit" class="action-btn" title="Resend Email"><i class='bx bx-send'></i></button>
+            </form>
+            {% endif %}
+            {% endif %}
+            <a href="{% url 'payroll:payslip_print' payslip.id %}?branch={{ selected_branch.id }}&return_to={{ request.get_full_path|urlencode }}" class="action-btn" title="View/Print Document"><i class='bx bx-printer'></i></a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div style="margin-top: 24px; display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);">
+  <div style="color: var(--text-2); font-weight: 500;">
+    <i class='bx bx-file-blank'></i> Total: {{ payslips|length }} documents in this batch
+  </div>
+  <div style="display: flex; gap: 12px;">
+    {% if period.status == 'GENERATED' or period.status == 'RELEASED' %}
+    <a href="{% url 'payroll:period_report' period.id %}" class="btn" style="background: var(--bg); color: var(--text-1); border: 1px solid var(--border); box-shadow: none;" title="Print the complete payroll"><i class='bx bx-printer'></i> Print Payroll</a>
+    {% endif %}
+    {% if period.status == 'GENERATED' %}
+    <button type="button" class="btn open-release-btn" data-release-url="{% url 'payroll:release' period.id %}" data-release-name="{{ period.period_display }}" style="background:#059669; border-color:#059669;" title="Send payslips to employees">
+      <i class='bx bx-send'></i> Release Payroll
+    </button>
+    {% endif %}
+    <a href="{% url 'payroll:requests' %}" class="btn" style="background: var(--bg); color: var(--text-1); border: 1px solid var(--border); box-shadow: none;"><i class='bx bx-arrow-back'></i> Back to Processing List</a>
+  </div>
+</div>
+{% else %}
+<div style="text-align: center; padding: 60px 20px; color: var(--text-3); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius-md);">
+  <i class='bx bx-folder-open' style="font-size: 3.5rem; margin-bottom: 12px; opacity: 0.6; color: var(--primary);"></i>
+  <h3 style="color: var(--text-1); margin-bottom: 8px;">No documents available</h3>
+  <p>There are no payslips generated for this cycle yet.</p>
+  {% if period %}
+  <form action="{% url 'payroll:generate_action' %}" method="POST" style="display: inline; margin-top: 20px;">
+    {% csrf_token %}
+    <input type="hidden" name="month" value="{{ period.month }}">
+    <input type="hidden" name="year" value="{{ period.year }}">
+    <button type="submit" class="btn"><i class='bx bx-plus-circle'></i> Generate Payslips for {{ period.period_display }}</button>
+  </form>
+  {% else %}
+  <a href="{% url 'payroll:requests' %}" class="btn" style="margin-top: 20px;"><i class='bx bx-arrow-back'></i> Back to Payroll Periods</a>
+  {% endif %}
+</div>
+{% endif %}
+<!-- Release Payroll Modal (used when user clicks Release Payroll) -->
+<div class="modal-overlay" id="releasePayrollModal">
+  <div class="modal-content" style="max-width:480px;">
+    <div class="modal-header">
+      <h3 style="color: #059669;"><i class='bx bx-info-circle'></i> Release Payroll</h3>
+      <button type="button" class="modal-close" onclick="closeReleaseModal()">&times;</button>
+    </div>
+    <form id="releasePayrollForm" method="get" action="">
+      {% csrf_token %}
+      <div class="modal-body" style="text-align:center; padding-top:28px;">
+        <i class='bx bx-check-circle' style="font-size:4rem; color:#059669; margin-bottom:12px;"></i>
+        <h4 style="margin-bottom:12px; font-size:1.1rem;">Release <span id="releasePeriodName"></span>?</h4>
+        <p style="color:var(--text-muted); font-size:0.95rem; line-height:1.4; margin-bottom:10px;">This will mark all payslips as released and send emails to all staff. Continue?</p>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end; gap:12px;">
+        <button type="button" class="btn-cancel" onclick="closeReleaseModal()">Cancel</button>
+        <button type="submit" class="btn-submit" style="background:#059669; border-color:#059669;">Yes, Release</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest && e.target.closest('.open-release-btn');
+  if (!btn) return;
+  const url = btn.getAttribute('data-release-url');
+  const name = btn.getAttribute('data-release-name');
+  if (url) {
+    document.getElementById('releasePayrollForm').action = url;
+    const el = document.getElementById('releasePeriodName');
+    if (el) el.textContent = name || '';
+    document.getElementById('releasePayrollModal').classList.add('active');
+  }
+});
+function closeReleaseModal(){ document.getElementById('releasePayrollModal').classList.remove('active'); }
+</script>
+{% endblock %}
