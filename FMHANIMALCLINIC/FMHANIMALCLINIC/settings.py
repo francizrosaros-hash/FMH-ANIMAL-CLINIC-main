@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import urllib.parse
 import warnings
 from pathlib import Path
 
@@ -166,25 +167,46 @@ DB_ENGINE = os.environ.get('DB_ENGINE', 'postgresql').strip().lower()
 if DB_ENGINE != 'postgresql':
     raise ValueError('This project is configured for PostgreSQL only. Set DB_ENGINE=postgresql.')
 
-if not DEBUG:
-    required_database_values = ('DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT')
-    missing_database_values = [key for key in required_database_values if not os.environ.get(key)]
-    if missing_database_values:
-        raise RuntimeError(
-            'Missing production database environment variables: '
-            + ', '.join(missing_database_values)
-        )
+# Railway automatically injects DATABASE_URL when a PostgreSQL plugin is attached.
+# When present it takes full priority over the individual DB_* variables.
+_DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'fmhclinic'),
-        'USER': os.environ.get('DB_USER', 'postgres'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-    },
-}
+if _DATABASE_URL:
+    _db = urllib.parse.urlparse(_DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': _db.path.lstrip('/'),
+            'USER': _db.username,
+            'PASSWORD': _db.password,
+            'HOST': _db.hostname,
+            'PORT': _db.port or 5432,
+            'OPTIONS': {
+                'sslmode': 'require',
+            },
+        },
+    }
+else:
+    # Fall back to individual DB_* environment variables (local development).
+    if not DEBUG:
+        required_database_values = ('DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT')
+        missing_database_values = [key for key in required_database_values if not os.environ.get(key)]
+        if missing_database_values:
+            raise RuntimeError(
+                'Missing production database environment variables: '
+                + ', '.join(missing_database_values)
+            )
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'fmhclinic'),
+            'USER': os.environ.get('DB_USER', 'postgres'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'postgres'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        },
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
