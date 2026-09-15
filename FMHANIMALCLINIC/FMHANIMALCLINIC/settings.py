@@ -189,13 +189,7 @@ if _DATABASE_URL:
 else:
     # Fall back to individual DB_* environment variables (local development).
     if not DEBUG:
-        required_database_values = ('DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST', 'DB_PORT')
-        missing_database_values = [key for key in required_database_values if not os.environ.get(key)]
-        if missing_database_values:
-            raise RuntimeError(
-                'Missing production database environment variables: '
-                + ', '.join(missing_database_values)
-            )
+        raise RuntimeError('DATABASE_URL must be set in production.')
 
     DATABASES = {
         'default': {
